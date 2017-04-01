@@ -103,3 +103,6 @@ CombatManagerDroid/com.kyleolson.combatmanager.apk
 ._.DS_Store
 CombatManager.VC.opendb
 .vs/
+*.dll
+UpgradeLog.htm
+CombatManager.VC.db

@@ -498,7 +498,10 @@ namespace CombatManager.Maps
 
         public Color GridColor
         {
-            get => gridColor;
+            get
+            {
+                return gridColor;
+            } 
             set
             {
                 if (gridColor != value)
