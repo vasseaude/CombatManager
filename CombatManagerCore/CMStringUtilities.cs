@@ -162,8 +162,17 @@ namespace CombatManager
 
             return res;
         }
-		
-		
+
+        public static string EncloseIteminParentheses(string target)
+        {
+            return (string.IsNullOrEmpty(target) ? target : "(" + target + ")");
+        }
+
+        public static string ReplaceCommaWithAmperstand(string target)
+        {
+            return (string.IsNullOrEmpty(target) ? target : target.Replace(",", " &"));
+        }
+
         public static string PastTense(this int num)
         {
 

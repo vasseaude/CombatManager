@@ -513,7 +513,8 @@ namespace Herolab {
         [XmlAttribute]
         public string eyes { get; set; }
         [XmlAttribute]
-        public Gender gender { get; set; }
+        //public Gender gender { get; set; }
+        public string gender { get; set; }
         [XmlIgnore]
         public bool genderSpecified { get; set; }
         [XmlAttribute]
@@ -542,9 +543,9 @@ namespace Herolab {
         public string value { get; set; }
     }
     
-    [Serializable]
-    [XmlType(AnonymousType=true)]
-    public enum Gender {Male,Female,}
+    //[Serializable]
+    //[XmlType(AnonymousType=true)]
+    //public enum Gender {Male,Female,}
     
     [Serializable]
     [XmlRoot("languages", IsNullable=false)]

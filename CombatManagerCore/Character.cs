@@ -121,7 +121,7 @@ namespace CombatManager
                 ac.Condition = Condition.FindCondition("Incorporeal");
                 this.monster.AddCondition(ac);
             }
-
+            Resources = monster.TResources;
             LoadResources();
 			
         }
@@ -939,6 +939,7 @@ namespace CombatManager
             }
         }
 
+
         [DataMember]
         public ObservableCollection<ActiveResource> Resources
         {
@@ -952,8 +953,7 @@ namespace CombatManager
                 {
                     resources = value;
 
-                    if (PropertyChanged != null) { PropertyChanged(this, new PropertyChangedEventArgs("Resources")); }
-
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Resources"));
                 }
             }
         }
@@ -997,7 +997,7 @@ namespace CombatManager
             public CharacterAdjuster(Character c)
             {
                 _c = c;
-                c.PropertyChanged += new PropertyChangedEventHandler(c_PropertyChanged);
+                c.PropertyChanged += c_PropertyChanged;
             }
 
             void c_PropertyChanged(object sender, PropertyChangedEventArgs e)

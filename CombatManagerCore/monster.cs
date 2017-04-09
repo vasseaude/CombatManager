@@ -34,6 +34,7 @@ using System.Runtime.Serialization;
 using System.Xml.Linq;
 using System.IO.Compression;
 //using Ionic.Zip;
+using Herolab;
 using System.Threading.Tasks;
 
 
@@ -421,6 +422,7 @@ namespace CombatManager
         private ObservableCollection<SpellBlockInfo> _SpellLikeAbilitiesBlock;
         private ObservableCollection<SpellBlockInfo> _SpellsKnownBlock;
         private ObservableCollection<SpellBlockInfo> _SpellsPreparedBlock;
+        private ObservableCollection<ActiveResource> TrackedResources;
 
         private struct DragonColorInfo
         {
@@ -818,6 +820,7 @@ namespace CombatManager
         {
             skillValueDictionary = new SortedDictionary<String, SkillValue>(StringComparer.OrdinalIgnoreCase);
             skillValueList = new List<SkillValue>();
+            TrackedResources = new ObservableCollection<ActiveResource>();
         }
 
         public static Monster BlankMonster()
@@ -1039,6 +1042,14 @@ namespace CombatManager
                 }
             }
 
+            if (m.TrackedResources != null)
+            {
+                foreach (ActiveResource Tresource in m.TrackedResources)
+                {
+                    TrackedResources.Add(new ActiveResource(Tresource));
+                }
+            }
+
             DBLoaderID = m.DBLoaderID;
 
         }
@@ -1210,7 +1221,13 @@ namespace CombatManager
                 }
             }
 
-
+            if (TrackedResources != null)
+            {
+                foreach (ActiveResource Tresource in TrackedResources)
+                {
+                    m.TrackedResources.Add(new ActiveResource(Tresource));
+                }
+            }
 
             m.DBLoaderID = DBLoaderID;
 
@@ -1224,7 +1241,8 @@ namespace CombatManager
             {
                 if (File.Exists(filename))
                 {
-                    returnMonsters = FromHeroLabZip(filename);
+                    //returnMonsters = FromHeroLabZip(filename);
+                    returnMonsters = FromHeroLabZipXml(filename);
                 }
                 else
                 {
@@ -1391,45 +1409,6 @@ namespace CombatManager
 
         }
 
-        //private static List<Monster> FromHeroLabZip(string filename)
-        //{
-            
-        //    List<Monster> monsters = new List<Monster>();
-
-        //    ZipFile f = ZipFile.Read(filename);
-            
-
-        //    foreach (var en in from v in f.Entries where v.FileName.StartsWith("statblocks_text") && !v.IsDirectory select v)
-        //    {
-        //        #if MONO
-
-        //        using (StreamReader r = new StreamReader(en.OpenReader(), Encoding.GetEncoding("utf-8")))
-        //        {
-        //        #else
-        //        using (StreamReader r = new StreamReader(en.OpenReader(), Encoding.GetEncoding("windows-1252")))
-        //        {
-        //        #endif
-        //            String block = r.ReadToEnd();
-
-        //            var otheren = f.Entries.FirstOrDefault(v => v.FileName.Equals(en.FileName.Replace("statblocks_text", "statblocks_xml").Replace(".txt", ".xml")));
-
-        //            XDocument doc = null;
-
-        //            if (otheren != null)
-        //            {
-        //                doc = XDocument.Load(new StreamReader(otheren.OpenReader()));
-        //            }
-
-
-        //            Monster monster = new Monster();
-        //            ImportHeroLabBlock(block, doc, monster, true);
-        //            monsters.Add(monster);
-                    
-        //        }
-        //    }
-
-        //    return monsters;
-        //}
 
         private static List<Monster> FromHeroLabZip(string filename)
         {
@@ -1718,6 +1697,1358 @@ namespace CombatManager
 
             }
             return monsters;
+        }
+
+        private static List<Monster> FromHeroLabZipXml(string filename)
+        {
+
+            List<Monster> hLmonsters = new List<Monster>();
+
+
+            using (var file = ZipFile.OpenRead(filename))
+            {
+
+                var xmlresult = from currentry in file.Entries
+                                where Path.GetDirectoryName(currentry.FullName) == "statblocks_xml"
+                                where !string.IsNullOrEmpty(currentry.Name)
+                                select currentry;
+                
+                    foreach (var result in xmlresult)
+                    {
+                        
+                    
+                    using (var ms = new MemoryStream())
+
+                    {
+
+                       var strm = result.Open(); // extract uncompressed content into a stream 
+                        //strm.Seek(0, SeekOrigin.Begin);
+                        //strm.CopyTo(ms);  // copy it into a memory stream for use
+                        //ms.Seek(0, SeekOrigin.Begin);// rewind the pointer the top of the stream
+                        var ser = new XmlSerializer(typeof(document)); //get a serializer
+                        var doc = (document)ser.Deserialize(strm);// Create [document] from the Memory Stream [Don't forget the cast dumbass]
+                        ImportHeroLabxml(hLmonsters, doc);
+                    }
+                }
+            }
+
+            return hLmonsters;
+        }
+        private static void ImportHeroLabxml(List<Monster> hLmonsters, document doc)
+        {
+
+            foreach (var HLCharacter in doc.@public.character)
+            {
+                Monster monster = new Monster();
+                CreateMonsterFromHerolabCharacter(HLCharacter, monster);
+                hLmonsters.Add(monster);
+                if (HLCharacter.minions.character != null)
+                {
+                    foreach (var minion in HLCharacter.minions.character)
+                    {
+                        Monster Minionmonster = new Monster();
+                        CreateMonsterFromHerolabCharacter(minion, Minionmonster);
+                        hLmonsters.Add(Minionmonster);
+                    }
+                }
+            }
+        }
+        private static void CreateMonsterFromHerolabCharacter(Herolab.Character HLCharacter, Monster monster)
+        {
+
+            #region Get Name
+            monster.name = (HLCharacter.name ?? "No Name Defined");
+            #endregion
+
+            #region Get Race
+            monster.race = (HLCharacter.race.name ?? "No Race Defined");
+            #endregion
+
+            #region Get Alignment
+            monster.alignment = (AlignmentText(ParseAlignment(HLCharacter.alignment.name)) ?? "No Alignment Defined");
+            #endregion
+
+            #region Get Size
+            monster.size = (HLCharacter.size.name ?? "No Size Defined");
+            #endregion
+
+            #region Get Space
+            monster.space = (HLCharacter.size.space.value ?? "No Space Defined");
+            #endregion
+
+            #region Get Reach
+            monster.reach = (HLCharacter.size.reach.value ?? "No Space Defined");
+            #endregion
+
+            #region Get CR
+            monster.cr = (HLCharacter.challengerating != null ? HLCharacter.challengerating.value : "No CR Defined");
+            #endregion
+
+            #region Get XP Value
+            monster.xp = (HLCharacter.xpaward != null ? HLCharacter.xpaward.value : "No XP Defined");
+            #endregion
+
+            #region Get Classes
+            monster.className = (HLCharacter.classes != null ? HLCharacter.classes.summary : "No Classes Defined");
+            #endregion
+
+            #region Get Types
+            if (HLCharacter.types.type != null)
+            {
+                var x = HLCharacter.types.type.Select(T => T.name);
+                monster.type = Stringfromlist(x);
+            }
+            #endregion
+
+            #region Get Subtypes
+            if (HLCharacter.subtypes.subtype != null)
+            {
+                var x = HLCharacter.subtypes.subtype.Select(T => T.name);
+                monster.subType = "(" + Stringfromlist(x) + ")";
+            }
+            #endregion
+
+            #region Get Senses
+            if (HLCharacter.senses.special != null)
+            {
+                var x = HLCharacter.senses.special.Select(T => T.shortname);
+                var perception = HLCharacter.skills.skill.Where(skill => skill.name == "Perception").Select(skill => Int32.Parse(skill.value)).Single();
+                monster.senses = (!string.IsNullOrEmpty(Stringfromlist(x)) ? Stringfromlist(x) + ", Perception " + CMStringUtilities.PlusFormatNumber(perception) : "Perception " + CMStringUtilities.PlusFormatNumber(perception));
+            }
+            else
+            {
+                var perception = HLCharacter.skills.skill.Where(skill => skill.name == "Perception").Select(skill => Int32.Parse(skill.value)).Single();
+                monster.senses = ("Perception " + CMStringUtilities.PlusFormatNumber(perception));
+            }
+            #endregion
+
+            #region Get Auras
+            if (HLCharacter.auras.special != null)
+            {
+                var Auras = HLCharacter.auras.special.Select((A => A.name));
+                foreach (var aura in Auras)
+                {
+                    monster.aura = monster.aura.AppendListItem(aura);
+                }
+
+            }
+            #endregion
+
+            #region Get HD
+            if (HLCharacter.templates.summary.Contains("Bonus HD"))
+            {
+                var bonusHD = Regex.Match(HLCharacter.templates.summary, "(?<=Bonus HD \\+)[0-9]+").Value;
+                monster.hd = (bonusHD + "d8" + HLCharacter.health.hitdice ?? "No HD Defined");
+            }
+
+            else
+            {
+                monster.hd = (HLCharacter.health.hitdice ?? "No HD Defined");
+            }
+            if (HLCharacter.health.hitpoints != null)
+            {
+                int.TryParse(HLCharacter.health.hitpoints, out monster.hp);
+
+            }
+            #endregion
+
+            #region Get Gender
+            // ReSharper disable once ConvertConditionalTernaryToNullCoalescing
+            monster.gender = ((HLCharacter.personal?.gender != null) ? HLCharacter.personal.gender : "No Gender Defined");
+            #endregion
+
+            #region Get Visual Description
+            monster.description_visual = (HLCharacter.personal.description.Value ?? "No Visual Despription");
+            #endregion
+
+            #region Get Languages
+            if (HLCharacter.languages.language != null)
+            {
+                var x = HLCharacter.languages.language.Select(T => T.name);
+                monster.languages = Stringfromlist(x);
+
+            }
+            #endregion
+
+            #region Get Stats
+            monster.statsParsed = true;
+            if (HLCharacter.attributes != null)
+            {
+
+                foreach (var stat in HLCharacter.attributes.attribute)
+                {
+                    switch (stat.name)
+                    {
+                        case "Strength":
+                            {
+                                if (stat.attrvalue.text != "-")
+                                {
+                                    monster.strength = Int32.Parse(stat.attrvalue.modified);
+                                }
+                                else
+                                {
+                                    monster.strength = null;
+                                }
+                                break;
+                            }
+                        case "Dexterity":
+                            {
+                                if (stat.attrvalue.text != "-")
+                                {
+                                    monster.dexterity = Int32.Parse(stat.attrvalue.modified);
+                                    if (monster.dexterity != null)
+                                    { monster.ac_mods = ReplaceModifierNumber(monster.ac_mods, "dex", AbilityBonus(monster.dexterity), false); }
+                                }
+                                else
+                                {
+                                    monster.dexterity = null;
+                                }
+                                break;
+                            }
+                        case "Constitution":
+                            {
+                                if (stat.attrvalue.text != "-")
+                                {
+                                    monster.constitution = Int32.Parse(stat.attrvalue.modified);
+                                }
+                                else
+                                {
+                                    monster.constitution = null;
+                                }
+                                break;
+                            }
+                        case "Intelligence":
+                            {
+                                if (stat.attrvalue.text != "-")
+                                {
+                                    monster.intelligence = Int32.Parse(stat.attrvalue.modified);
+                                }
+                                else
+                                {
+                                    monster.intelligence = null;
+                                }
+                                break;
+                            }
+                        case "Wisdom":
+                            {
+                                if (stat.attrvalue.text != "-")
+                                {
+                                    monster.wisdom = Int32.Parse(stat.attrvalue.modified);
+                                }
+                                else
+                                {
+                                    monster.wisdom = null;
+                                }
+                                break;
+                            }
+                        case "Charisma":
+                            {
+                                if (stat.attrvalue.text != "-")
+                                {
+                                    monster.charisma = Int32.Parse(stat.attrvalue.modified);
+                                }
+                                else
+                                {
+                                    monster.charisma = null;
+                                }
+                                break;
+                            }
+                    }
+
+                }
+            }
+            #endregion
+
+            #region Get Saves
+            if (HLCharacter.saves != null)
+            {
+                foreach (var save in HLCharacter.saves.save)
+                {
+                    switch (save.abbr)
+                    {
+                        case "Fort":
+                            {
+                                int nullholder;
+                                int.TryParse(save.save, out nullholder);
+                                monster.fort = nullholder;
+                                break;
+                            }
+                        case "Ref":
+                            {
+                                int nullholder;
+                                int.TryParse(save.save, out nullholder);
+                                monster.reflex = nullholder;
+                                break;
+                            }
+                        case "Will":
+                            {
+                                int nullholder;
+                                int.TryParse(save.save, out nullholder);
+                                monster.will = nullholder;
+                                break;
+                            }
+                    }
+                }
+            }
+            #endregion
+
+            #region Get Immunities
+            if (HLCharacter.immunities.special != null)
+            {
+                var x = HLCharacter.immunities.special.Select(T => T.shortname);
+                monster.immune = Stringfromlist(x);
+            }
+            #endregion
+
+            #region Get Resistances and SR
+            if (HLCharacter.resistances.special != null)
+            {
+                var x = HLCharacter.resistances.special.Where(T => !T.shortname.Contains("spells")).Select((T => T.shortname));
+                monster.resist = Stringfromlist(x);
+                if (HLCharacter.resistances.special.SingleOrDefault(SR => SR.shortname.Contains("spells")) != null)
+                {
+                    monster.sr = HLCharacter.resistances.special.Where(SR => SR.shortname.Contains("spells")).Select(SR => Regex.Match(SR.shortname, "[0-9]+")).SingleOrDefault().Value;
+                }
+            }
+            if (HLCharacter.weaknesses.special != null)
+            {
+                var x = HLCharacter.weaknesses.special.Select(T => T.name);
+                monster.weaknesses = Stringfromlist(x);
+            }
+            #endregion
+
+            #region Get AC
+            monster.acParsed = true;
+
+            if (HLCharacter.armorclass != null)
+            {
+                int.TryParse(HLCharacter.armorclass.ac, out monster.fullAC);
+
+
+                int.TryParse(HLCharacter.armorclass.touch, out monster.touchAC);
+
+                int.TryParse(HLCharacter.armorclass.flatfooted, out monster.flatFootedAC);
+
+                int.TryParse(HLCharacter.armorclass.fromarmor, out monster.armor);
+                monster.ac_mods = ReplaceModifierNumber(monster.ac_mods, "armor", monster.armor, false);
+                int.TryParse(HLCharacter.armorclass.fromshield, out monster.shield);
+                monster.ac_mods = ReplaceModifierNumber(monster.ac_mods, "shield", monster.shield, false);
+                int.TryParse(HLCharacter.armorclass.fromdeflect, out monster.deflection);
+                monster.ac_mods = ReplaceModifierNumber(monster.ac_mods, "deflection", monster.deflection, false);
+                int.TryParse(HLCharacter.armorclass.fromdodge, out monster.dodge);
+                monster.ac_mods = ReplaceModifierNumber(monster.ac_mods, "dodge", monster.dodge, false);
+                int.TryParse(HLCharacter.armorclass.fromnatural, out monster.naturalArmor);
+                monster.ac_mods = ReplaceModifierNumber(monster.ac_mods, "natural", monster.naturalArmor, false);
+            }
+            #endregion
+
+            #region Get CMB
+            monster.cmb = (HLCharacter.maneuvers.cmb ?? "10");
+            #endregion
+
+            #region Get CMD
+            monster.cmd = (HLCharacter.maneuvers.cmd ?? "10");
+            #endregion
+
+            #region Get BAB
+            if (HLCharacter.attack.baseattack != null)
+            {
+                int.TryParse(HLCharacter.attack.baseattack, out monster.baseAtk);
+            }
+            #endregion
+
+            #region Get Initiative
+            if (HLCharacter.initiative != null)
+            {
+                int.TryParse(HLCharacter.initiative.total, out monster.init);
+            }
+            #endregion
+
+            #region Get Movement
+            if (HLCharacter.movement != null)
+            {
+                monster.Speed = HLCharacter.movement.basespeed.value + " ft.";
+                if (HLCharacter.movement.special != null)
+                {
+                    var moveexp = new Regex(@"(?<Type>(Swimming|Climbing|Burrowing|Flight))[\W]+(?<Value>([0-9]+))\sfeet[\W]+(?<Quality>(Clumsy|Poor|Average|Good|Perfect))?");
+                    var movements = HLCharacter.movement.special.ToList();
+                    foreach (Match match in movements.Select(movetype => moveexp.Match(movetype.shortname)).Where(match => match.Success && !string.IsNullOrEmpty(match.Groups["Value"].Value)))
+                    {
+                        switch (match.Groups["Type"].Value)
+                        {
+                            case "Flight":
+                                {
+                                    monster.fly = "fly " + match.Groups["Value"].Value + " ft. (" + match.Groups["Quality"].Value + ")";
+                                    monster.speed = monster.speed.AppendListItem(monster.fly);
+                                    break;
+                                }
+                            case "Swimming":
+                                {
+                                    monster.swim = "swim " + match.Groups["Value"].Value + " ft.";
+                                    monster.speed = monster.speed.AppendListItem(monster.swim);
+                                    break;
+                                }
+                            case "Burrowing":
+                                {
+                                    monster.burrow = "burrow " + match.Groups["Value"].Value + " ft.";
+                                    monster.speed = monster.speed.AppendListItem(monster.burrow);
+                                    break;
+                                }
+                            case "Climbing":
+                                {
+                                    monster.climb = "climb " + match.Groups["Value"].Value + " ft.";
+                                    monster.speed = monster.speed.AppendListItem(monster.climb);
+                                    break;
+                                }
+                        }
+                    }
+                }
+            }
+            #endregion
+
+            #region Get Feats
+            if (HLCharacter.feats.feat != null)
+            {
+                var featsList = new List<string>();
+                foreach (var feat in HLCharacter.feats.feat)
+                {
+                    if (feat.name.Contains("- All"))
+                    {
+                        string fixedfeat = feat.name.Replace(" - All", " (All)");
+                        featsList.Add(fixedfeat);
+                        //monster.AddFeat(fixedfeat);
+                    }
+                    else
+                    {
+                        featsList.Add(feat.name);
+                        //monster.AddFeat(feat.name);
+                    }
+                }
+                monster.featsList = featsList;
+            }
+            #endregion
+
+            #region Get Special Attacks
+            if (HLCharacter.attack.special != null)
+            {
+                var Specialattacks = HLCharacter.attack.special.Select(A => A.name);
+                foreach (var Specialattack in Specialattacks)
+                {
+                    monster.specialAttacks = monster.specialAttacks.AppendListItem(Specialattack);
+                }
+            }
+            #endregion
+
+            #region Get skills
+
+            if (HLCharacter.skills.skill != null)
+            {
+                var svd = new SortedDictionary<String, SkillValue>(StringComparer.OrdinalIgnoreCase);
+                var Listofskills = from skill in HLCharacter.skills.skill where skill.ranks != "0" || skill.name == "Perception" select skill;
+                foreach (var HLSkill in Listofskills)
+                {
+                    var skill = Getskillinfo(HLSkill.name);
+                    var CMSkill = new SkillValue(skill.Item1) { Subtype = skill.Item2, Mod = Int32.Parse(HLSkill.value) };
+                    svd.Add(HLSkill.name, CMSkill);
+                }
+                monster.skillsParsed = true;
+                monster.skillValueDictionary = svd;
+            }
+            #endregion
+
+            #region Get Spells and SLA
+            CreateSpellBlockStrings(HLCharacter, monster);
+            //monster.ParseSpellLikeAbilities();
+            //CreateSpellBlocks(HLCharacter, monster);
+            //CreateSLAblock();
+
+            #endregion
+
+            //if (HLCharacter.melee.weapon != null)
+            //{
+            //    var MeleeWeapons = HLCharacter.melee.weapon.Where(weapon => weapon.categorytext.Contains("Melee Weapon") && weapon.name != "Unarmed strike");
+            //    var weapons = new SortedDictionary<string, WeaponItem>(StringComparer.OrdinalIgnoreCase);
+
+            //    foreach (var meleeWeapon in MeleeWeapons)
+            //    {
+            //        var key = meleeWeapon.name;
+            //        var ismasterwork = Removequalityfromname(meleeWeapon);
+            //        var Enhancement = Removeenhancementbonusfromweaponname(meleeWeapon);
+            //        Removeadjectivesfromweaponname(meleeWeapon);
+            //        string Material = Removematerialfromweaponname(meleeWeapon);
+            //        meleeWeapon.name = meleeWeapon.name.Trim();
+            //        if (Weapon.Find(meleeWeapon.name) != null)
+            //        {
+            //            if (!weapons.ContainsKey(key))
+            //            {
+            //                weapons.Add(key, new WeaponItem(Weapon.Find(meleeWeapon.name)));
+            //                //weapons.Add(meleeWeapon.name, new WeaponItem(Weapon.Find(meleeWeapon.name)));
+            //                weapons[key].Masterwork = ismasterwork;
+            //                weapons[key].MagicBonus = Enhancement ?? 0;
+            //                var Itempowers = new SortedDictionary<string, string>();
+            //                if (meleeWeapon.itempower != null)
+            //                {
+            //                    foreach (var Itempower in meleeWeapon.itempower)
+            //                    {
+            //                        Itempowers.Add(Itempower.name, Itempower.name);
+            //                    }
+            //                    weapons[key].SpecialAbilitySet = Itempowers;
+            //                }
+
+            //                weapons[key].Material = Material;
+            //            }
+            //        }
+
+            //    }
+            //}
+
+            // this is fucking retaraded 
+            //Attack
+            //list<Attack>
+            //Attackset
+            //CharacterAttacks()
+            //CharacterAttacks(ObservableCollection<AttackSet> melee, ObservableCollection<Attack> ranged)
+            //CharacterAttacks(Monster stats)
+            #region Get Melee Attacks
+            if (HLCharacter.melee.weapon != null)
+            {
+                var MeleeWeapons = HLCharacter.melee.weapon.Where(weapon => weapon.categorytext.Contains("Melee Weapon") && weapon.name != "Unarmed strike");
+                var first = true;
+                foreach (var weapon in MeleeWeapons)
+                {
+                    // replace the unicode U+00D7 Multiplication sign with x
+                    weapon.crit = weapon.crit.Replace("×", "x");
+                    RemoveNonLethal(weapon);
+                    RemoveEntangle(weapon);
+                    PurifyWeapon(weapon, HLCharacter.race.name);
+                    var dd = new Tuple<int, int, int, string>(0, 0, 0, null);
+                    if (!string.IsNullOrEmpty(weapon.damage))
+                    {
+                        dd = Getdamageroll(weapon.damage);
+                    }
+                    var dr = new DieRoll(dd.Item1, dd.Item2, dd.Item3);
+
+                    if (first)
+                    {
+                        monster.melee += weapon.name.Replace(",", "") + " " + weapon.attack + " (" + dr.Text + (weapon.crit.Contains("x2") ? "" : "/" + weapon.crit) + dd.Item4 + ") ";
+                        first = false;
+                    }
+                    else
+                    {
+                        monster.melee += "or " + weapon.name.Replace(",", "") + " " + weapon.attack + " (" + dr.Text + (weapon.crit.Contains("x2") ? "" : "/" + weapon.crit) + dd.Item4 + ") ";
+                    }
+
+
+
+                }
+            }
+            #endregion
+
+            #region Get Ranged Attacks
+            if (HLCharacter.ranged.weapon != null && HLCharacter.melee.weapon != null)
+            {
+                var RangedWeapons = HLCharacter.melee.weapon.Where(weapon => weapon.categorytext.Contains("Thrown Weapon")).Concat(HLCharacter.ranged.weapon.Where(weapon => weapon.categorytext.Contains("Projectile Weapon")));
+
+                var first = true;
+                foreach (var weapon in RangedWeapons)
+                {
+                    // replace the unicode U+00D7 Multiplication sign with x
+                    weapon.crit = weapon.crit.Replace("×", "x");
+                    PurifyWeapon(weapon, HLCharacter.race.name);
+                    var dd = new Tuple<int, int, int, string>(0, 0, 0, null);
+                    if (!string.IsNullOrEmpty(weapon.damage))
+                    {
+                        dd = Getdamageroll(weapon.damage);
+                    }
+                    var dr = new DieRoll(dd.Item1, dd.Item2, dd.Item3);
+
+                    if (first)
+                    {
+                        monster.ranged += weapon.name.Replace(",", "") + " " + weapon.attack + " (" + dr.Text + (weapon.crit.Contains("x2") ? "" : "/" + weapon.crit) + dd.Item4 + ") ";
+                        first = false;
+                    }
+                    else
+                    {
+                        monster.ranged += "or " + weapon.name.Replace(",", "") + " " + weapon.attack + " (" + dr.Text + (weapon.crit.Contains("x2") ? "" : "/" + weapon.crit) + dd.Item4 + ") ";
+                    }
+
+
+                }
+            }
+            #endregion
+
+            #region Get Gear
+            if (HLCharacter.gear.item != null)
+            {
+                var x = HLCharacter.gear.item.Where((item => item.name != ""));
+                foreach (var item in x)
+                {
+                    monster.gear = item.quantity != "1" ? monster.gear.AppendListItem(item.name + " " + CMStringUtilities.EncloseIteminParentheses(item.quantity)) : monster.gear.AppendListItem(item.name);
+                }
+
+            }
+            #endregion
+
+            #region Get Magic Items
+            if (HLCharacter.magicitems.item != null)
+            {
+                var x = HLCharacter.magicitems.item.Where((item => item.name != ""));
+                foreach (var item in x)
+                {
+                    if (monster.gear != null)
+                    {
+                        if (monster.gear.Contains(item.name))
+                        {
+                            continue;
+                        }
+                    }
+                    if (item.name.Contains("Scroll of"))
+                    {
+                        monster.gear = monster.gear.AppendListItem(CMStringUtilities.ReplaceCommaWithAmperstand(item.name));
+                    }
+                    else
+                    {
+                        monster.gear = item.quantity != "1" ? monster.gear.AppendListItem(item.name + " " + CMStringUtilities.EncloseIteminParentheses(item.quantity)) : monster.gear.AppendListItem(item.name);
+                    }
+                }
+            }
+            #endregion
+
+            #region Get Armor
+            if (HLCharacter.defenses.armor != null)
+            {
+                var x = HLCharacter.defenses.armor.Where((item => item.name != ""));
+                foreach (var item in x.Where(item => !item.name.Equals("Natural armor")))
+                {
+                    if (monster.gear != null)
+                    {
+                        if (monster.gear.Contains(item.name))
+                        {
+                            //make incrementor for multiple items of same.
+                            continue;
+                        }
+                    }
+                    monster.gear = item.quantity != "1" ? monster.gear.AppendListItem(item.name + " " + CMStringUtilities.EncloseIteminParentheses(item.quantity)) : monster.gear.AppendListItem(item.name);
+                }
+            }
+            #endregion
+
+            #region Get Melee Weapons
+            if (HLCharacter.melee.weapon != null)
+            {
+                var x = HLCharacter.melee.weapon.Where((item => item.name != "" || item.name != "Unarmed strike"));
+                foreach (var item in x)
+                {
+                    //if(weaponNameList.ContainsKey(item.name))
+                    if (monster.gear != null)
+                    {
+                        if (monster.gear.Contains(item.name))
+                        {
+                            continue;
+                        }
+                    }
+                    monster.gear = item.quantity != "1" ? monster.gear.AppendListItem(item.name + " " + CMStringUtilities.EncloseIteminParentheses(item.quantity)) : monster.gear.AppendListItem(item.name);
+                }
+            }
+            #endregion
+
+            #region Get Ranged Weapons
+            if (HLCharacter.ranged.weapon != null)
+            {
+                var x = HLCharacter.ranged.weapon.Where((item => item.name != ""));
+                foreach (var item in x)
+                {
+                    if (monster.gear != null)
+                    {
+                        if (monster.gear.Contains(item.name))
+                        {
+                            continue;
+                        }
+                    }
+                    monster.gear = item.quantity != "1" ? monster.gear.AppendListItem(item.name + " " + CMStringUtilities.EncloseIteminParentheses(item.quantity)) : monster.gear.AppendListItem(item.name);
+                }
+            }
+            #endregion
+
+            #region Get Special Abilities (Defensive)
+            if (HLCharacter.defensive.special != null)
+            {
+                var x = HLCharacter.defensive.special.Where(special => special.type != null);
+                foreach (SpecialAbility ab in x.Select(special => new SpecialAbility
+                {
+                    Name = RemoveSpecialTypefromName(special.name, ShortenSpecialType(special.type)),
+                    Type = ShortenSpecialType(special.type),
+                    Text = special.description.Value
+                }))
+                {
+                    monster.SpecialAbilitiesList.Add(ab);
+                }
+            }
+            #endregion
+
+            #region Get Special Attacks
+            if (HLCharacter.attack.special != null)
+            {
+                var x = HLCharacter.attack.special.Where(special => special.type != null);
+                foreach (SpecialAbility ab in x.Select(special => new SpecialAbility
+                {
+                    Name = RemoveSpecialTypefromName(special.name, ShortenSpecialType(special.type)),
+                    Type = ShortenSpecialType(special.type),
+                    Text = special.description.Value
+                }))
+                {
+                    monster.SpecialAbilitiesList.Add(ab);
+                }
+            }
+            #endregion
+
+            // are all of these special qualities
+            #region Get Special Qualities
+            if (HLCharacter.otherspecials.special != null)
+            {
+                var x = HLCharacter.otherspecials.special.Where(special => special.type != null);
+                foreach (SpecialAbility ability in x.Select(special => new SpecialAbility
+                {
+                    Name = RemoveSpecialTypefromName(special.name, ShortenSpecialType(special.type)),
+                    Type = ShortenSpecialType(special.type),
+                    Text = special.description.Value
+                }))
+                {
+                    monster.SpecialAbilitiesList.Add(ability);
+                }
+            }
+            #endregion
+
+            #region Get Treasure
+            if (HLCharacter.money.pp != "0")
+            {
+                monster.treasure = monster.treasure.AppendListItem(HLCharacter.money.pp + "pp");
+            }
+            if (HLCharacter.money.gp != "0")
+            {
+                monster.treasure = monster.treasure.AppendListItem(HLCharacter.money.gp + "gp");
+            }
+            if (HLCharacter.money.sp != "0")
+            {
+                monster.treasure = monster.treasure.AppendListItem(HLCharacter.money.sp + "sp");
+            }
+            if (HLCharacter.money.cp != "0")
+            {
+                monster.treasure = monster.treasure.AppendListItem(HLCharacter.money.cp + "cp");
+            }
+            if (HLCharacter.money.valuables != "0")
+            {
+                monster.treasure = monster.treasure.AppendListItem(HLCharacter.money.valuables + "Valuables");
+            }
+            #endregion
+
+            #region Add a basic Description if available
+            if (HLCharacter.personal != null)
+            {
+                monster.description_visual = HLCharacter.race.name + " " + HLCharacter.personal.gender.ToString() +
+                                             " Age " + HLCharacter.personal.age + " Hair: " +
+                                             HLCharacter.personal.hair + " Eyes: " + HLCharacter.personal.eyes +
+                                             " Skin: " + HLCharacter.personal.hair + " Height: " +
+                                             HLCharacter.personal.charheight.text + " Weight: " +
+                                             HLCharacter.personal.charweight.text;
+                monster.description = HLCharacter.personal.description.Value;
+            }
+            #endregion
+
+            #region Get Tracked Resources
+            if (HLCharacter.trackedresources.trackedresource != null)
+            {
+                var x = HLCharacter.trackedresources.trackedresource.Select(tresource => tresource);
+                foreach (var Tres in x.Select(r => new ActiveResource { Name = r.name, Max = Int32.Parse(r.max), Current = Int32.Parse(r.left) }))
+                {
+                    monster.TResources.Add(Tres);
+                }
+            }
+            #endregion
+
+        }
+
+        private static void RemoveEntangle(Herolab.Weapon weapon)
+        {
+            weapon.damage = Regex.Replace(weapon.damage, "entangle", "1d0");
+            weapon.crit = weapon.crit == "" ? "x2":weapon.crit;
+            if (weapon.crit == "")
+            {
+                weapon.crit = "x2";
+            }
+        }
+
+        private static void RemoveNonLethal(Herolab.Weapon weapon)
+        {
+            weapon.damage = Regex.Replace(weapon.damage, "nonlethal", "");
+        }
+
+        private static string ExtractSpellName(string rawspellname)
+        {
+            string[] Separators = { ",", "(" };
+            string[] result;
+            string spellname = rawspellname.TrimEnd(new char[] { 'D', ' ' });
+            spellname = StringCapitalizer.Capitalize(rawspellname).Trim();
+            result = spellname.Split(Separators, StringSplitOptions.None);
+            if (result.Count() > 1)
+            {
+                return result[1].Trim().Contains("Lesser") || result[1].Trim().Contains("Greater") || result[1].Trim().Contains("Communal") || result[1].Trim().Contains("Mass") ? result[0].Trim() + ", " + result[1].Trim() : result[0].Trim();
+            }
+            return result[0].Trim();
+        }
+        private static void CreateSpellBlockStrings(Herolab.Character Character, Monster monster)
+        {
+            if (Character.spellclasses.spellclass != null)
+            {
+                List<Class> acClasses = Character.classes.@class.ToList();
+                string Knowstring = "";
+                string Preparedstring = "";
+                foreach (var sc in Character.spellclasses.spellclass)
+                {
+                    if (sc.spells == "Spontaneous" && Character.spellsknown.spell != null)
+                    {
+                        List<Herolab.Spell> list = Character.spellsknown.spell.ToList();
+                        Knowstring += SpontaneousString(sc, list, acClasses);
+                    }
+                    if (sc.spells != "Spontaneous" && Character.spellsmemorized.spell != null)
+                    {
+                        List<Herolab.Spell> list = Character.spellsmemorized.spell.ToList();
+                        Preparedstring += PreparedString(sc, list, acClasses);
+                    }
+
+                }
+                monster.spellsKnown = Knowstring;
+                monster.spellsPrepared = Preparedstring;
+            }
+            if (Character.spelllike.special != null)
+            {
+                var SLAlist = Character.spelllike.special.Select(items => items).ToList();
+
+                string SLAstring = SLAString(SLAlist);
+                monster.SpellLikeAbilities = SLAstring;
+            }
+        }
+        private static void CreateSpellBlocks(Herolab.Character Character, Monster monster)
+        {
+            var KnowBlocklist = new ObservableCollection<SpellBlockInfo>();
+            var PreparedBlocklist = new ObservableCollection<SpellBlockInfo>();
+
+            if (Character.spellclasses.spellclass != null)
+            {
+                List<Class> acClasses = Character.classes.@class.ToList();
+
+                foreach (var sc in Character.spellclasses.spellclass)
+                {
+                    if (sc.spells == "Spontaneous" && Character.spellsknown.spell != null)
+                    {
+                        List<Herolab.Spell> list = Character.spellsknown.spell.ToList();
+                        KnowBlocklist.Add(SpontaneousBlock(sc, list, acClasses));
+                    }
+                    if (sc.spells != "Spontaneous" && Character.spellsmemorized.spell != null)
+                    {
+                        List<Herolab.Spell> list = Character.spellsmemorized.spell.ToList();
+                        if (PreparedBlock(sc, list, acClasses).Levels.Count != 0)
+                        {
+                            PreparedBlocklist.Add(PreparedBlock(sc, list, acClasses));
+                        }
+                    }
+
+                }
+                //monster.SpellsPreparedBlock = PreparedBlocklist;
+                //monster.SpellsKnownBlock = KnowBlocklist;
+            }
+
+        }
+        private static string SLAString(List<Special> list)
+        {
+            string[] durations = { "Constant", "At will", "1/day", "2/day", "3/day", "4/day", "5/day", "6/day", "7/day" };
+            var sb = new StringBuilder();
+            string tracker = "";
+            sb.Append("Spell-Like Abilities (CL 0)");
+
+            foreach (var duration in durations)
+            {
+                bool first = true;
+                foreach (var item in list)
+                {
+
+                    string SLA = "";
+                    Tuple<string, string, string> x = GetSLAinfo(item.name);
+                    if (x.Item3 == duration)
+                    {
+                        if (first)
+                        {
+                            SLA = (string.IsNullOrEmpty(x.Item2) ? x.Item1 : x.Item1 + " (" + x.Item2 + ")");
+                            first = false;
+                        }
+                        else
+                        {
+                            SLA = (string.IsNullOrEmpty(x.Item2) ? ", " + x.Item1 : ", " + x.Item1 + " (" + x.Item2 + ")");
+                        }
+
+                    }
+                    if (!string.IsNullOrEmpty(SLA))
+                    {
+                        if (tracker != duration)
+                        {
+                            sb.Append(" ");
+                            sb.Append(duration + "-");
+                        }
+                        sb.Append(SLA);
+                        tracker = duration;
+                    }
+
+
+                }
+
+                tracker = duration;
+            }
+
+            return sb.ToString();
+        }
+        private static string PreparedString(Spellclass spellclass, List<Herolab.Spell> list, List<Class> acClasses)
+        {
+            var sb = new StringBuilder();
+            var x = list.Where(spell => spell.@class == RemoveArchtypefromName(spellclass.name)).OrderBy(spell => spell.level).ThenBy(spell => spell.name);
+            var Header = from acClass in acClasses
+                         where acClass.name == spellclass.name
+                         select new { concentration = (acClass.concentrationcheck ?? "+0"), acClass.casterlevel, Spellfail = (acClass.arcanespellfailure != null ? acClass.arcanespellfailure.value : string.Empty) };
+
+            foreach (var VARIABLE in Header)
+            {
+                sb.Append(spellclass.name + " Spells Prepared " + "(CL " + VARIABLE.casterlevel + "; concentration " + VARIABLE.concentration + ") ");
+                return getspellString(x, sb, spellclass, false).ToString();
+            }
+            return null;
+        }
+        private static string SpontaneousString(Spellclass spellclass, List<Herolab.Spell> list, List<Class> acClasses)
+        {
+            var sb = new StringBuilder();
+            var x = list.Where(spell => spell.@class == RemoveArchtypefromName(spellclass.name)).OrderBy(spell => spell.level).ThenBy(spell => spell.name);
+            var Header = from acClass in acClasses
+                         where acClass.name == spellclass.name
+                         select new { concentration = (acClass.concentrationcheck ?? "+0"), acClass.casterlevel, Spellfail = (acClass.arcanespellfailure != null ? acClass.arcanespellfailure.value : string.Empty) };
+
+            foreach (var VARIABLE in Header)
+            {
+
+                sb.Append(spellclass.name + " Spells Known " + "(CL " + VARIABLE.casterlevel + "; concentration " + VARIABLE.concentration + ") ");
+                return getspellString(x, sb, spellclass, true).ToString();
+            }
+            return null;
+        }
+        private static SpellBlockInfo PreparedBlock(Spellclass spellclass, List<Herolab.Spell> list, List<Class> acClasses)
+        {
+
+            var bi = new SpellBlockInfo();
+            var x = list.Where(spell => spell.@class == RemoveArchtypefromName(spellclass.name)).OrderBy(spell => spell.level).ThenBy(spell => spell.name);
+            var Header = from acClass in acClasses
+                         where acClass.name == spellclass.name
+                         select new { concentration = (acClass.concentrationcheck ?? "+0"), acClass.casterlevel, Spellfail = (acClass.arcanespellfailure != null ? acClass.arcanespellfailure.value : string.Empty) };
+            int counter = x.Count();
+            int levelcnt = 0;
+
+            foreach (var VARIABLE in Header)
+            {
+                bi.Concentration = Int32.Parse(VARIABLE.concentration);
+                bi.BlockType = "Prepared";
+                bi.Class = spellclass.name;
+                bi.SpellFailure = !string.IsNullOrEmpty(VARIABLE.Spellfail) ? Int32.Parse(VARIABLE.Spellfail) : default(int?);
+                bi.CasterLevel = Int32.Parse(VARIABLE.casterlevel);
+                while (counter != 0)
+                {
+
+                    var li = new SpellLevelInfo();
+                    int levelcnt1 = levelcnt;
+                    var y = x.Where(spell => spell.level == levelcnt1.ToString());
+                    levelcnt++;
+                    if (y.Count() != 0)
+                    {
+                        bi.Levels.Add(getspellBlock(y, li, spellclass, false));
+
+                    }
+                    counter -= li.Spells.Count;
+                }
+                return bi;
+            }
+            return null;
+        }
+        private static SpellBlockInfo SpontaneousBlock(Spellclass spellclass, List<Herolab.Spell> list, List<Class> acClasses)
+        {
+
+            var bi = new SpellBlockInfo();
+            var x = list.Where(spell => spell.@class == RemoveArchtypefromName(spellclass.name)).OrderBy(spell => spell.level).ThenBy(spell => spell.name);
+            var Header =
+                acClasses.Where(acClass => acClass.name == spellclass.name)
+                    .Select(acClass => new
+                    {
+                        concentration = (acClass.concentrationcheck ?? "+0"),
+                        acClass.casterlevel,
+                        Spellfail = (acClass.arcanespellfailure != null ? acClass.arcanespellfailure.value : string.Empty)
+                    });
+            int counter = x.Count();
+            int levelcnt = 0;
+
+            foreach (var VARIABLE in Header)
+            {
+                bi.Concentration = Int32.Parse(VARIABLE.concentration);
+                bi.BlockType = "Spontaneous";
+                bi.Class = spellclass.name;
+                bi.SpellFailure = !string.IsNullOrEmpty(VARIABLE.Spellfail) ? Int32.Parse(VARIABLE.Spellfail) : default(int?);
+                bi.CasterLevel = Int32.Parse(VARIABLE.casterlevel);
+                while (counter != 0)
+                {
+
+                    var li = new SpellLevelInfo();
+                    int levelcnt1 = levelcnt;
+                    var y = x.Where(spell => spell.level == levelcnt1.ToString());
+                    levelcnt++;
+                    if (y.Count() != 0)
+                    {
+                        bi.Levels.Add(getspellBlock(y, li, spellclass, true));
+
+                    }
+                    if (levelcnt > Int32.Parse(spellclass.maxspelllevel)) { break; }
+                    counter -= li.Spells.Count;
+                }
+                return bi;
+            }
+            return null;
+        }
+        private static SpellLevelInfo getspellBlock(IEnumerable<Herolab.Spell> y, SpellLevelInfo li, Spellclass spellclass, bool perday)
+        {
+
+            foreach (var spell in y)
+            {
+                var si = new SpellInfo();
+                li.Level = Int32.Parse(spell.level);
+                if (perday)
+                {
+                    switch (spell.level)
+                    {
+                        case "0":
+                            li.AtWill = true;
+                            break;
+                        default:
+                            var list = spellclass.spelllevel.ToList();
+                            li.PerDay = Int32.Parse((from sl in list where sl.level == spell.level select sl.maxcasts).Single());
+                            break;
+                    }
+
+                }
+
+                switch (spell.level)
+                {
+                    case "0":
+                        si.Name = spell.name;
+                        si.DC = Int32.Parse(spell.dc);
+                        si.Spell = Spell.ByName(ExtractSpellName(spell.name));
+                        si.Cast = (spell.castsleft != null && spell.castsleft != "0" ? Int32.Parse(spell.castsleft) : default(int?));
+                        si.AlreadyCast = (spell.castsleft != null && spell.castsleft == "0");
+
+                        break;
+                    case "1":
+                        si.Name = spell.name;
+                        si.DC = Int32.Parse(spell.dc);
+                        si.Spell = Spell.ByName(ExtractSpellName(spell.name));
+                        si.Cast = (spell.castsleft != null && spell.castsleft != "0" ? Int32.Parse(spell.castsleft) : default(int?));
+                        si.AlreadyCast = (spell.castsleft != null && spell.castsleft == "0");
+                        break;
+                    case "2":
+                        si.Name = spell.name;
+                        si.DC = Int32.Parse(spell.dc);
+                        si.Spell = Spell.ByName(ExtractSpellName(spell.name));
+                        si.Cast = (spell.castsleft != null && spell.castsleft != "0" ? Int32.Parse(spell.castsleft) : default(int?));
+                        si.AlreadyCast = (spell.castsleft != null && spell.castsleft == "0");
+                        break;
+                    case "3":
+                        si.Name = spell.name;
+                        si.DC = Int32.Parse(spell.dc);
+                        si.Spell = Spell.ByName(ExtractSpellName(spell.name));
+                        si.Cast = (spell.castsleft != null && spell.castsleft != "0" ? Int32.Parse(spell.castsleft) : default(int?));
+                        si.AlreadyCast = (spell.castsleft != null && spell.castsleft == "0");
+                        break;
+                    case "4":
+                        si.Name = spell.name;
+                        si.DC = Int32.Parse(spell.dc);
+                        si.Spell = Spell.ByName(ExtractSpellName(spell.name));
+                        si.Cast = (spell.castsleft != null && spell.castsleft != "0" ? Int32.Parse(spell.castsleft) : default(int?));
+                        si.AlreadyCast = (spell.castsleft != null && spell.castsleft == "0");
+                        break;
+                    case "5":
+                        si.Name = spell.name;
+                        si.DC = Int32.Parse(spell.dc);
+                        si.Spell = Spell.ByName(ExtractSpellName(spell.name));
+                        si.Cast = (spell.castsleft != null && spell.castsleft != "0" ? Int32.Parse(spell.castsleft) : default(int?));
+                        si.AlreadyCast = (spell.castsleft != null && spell.castsleft == "0");
+                        break;
+                    case "6":
+                        si.Name = spell.name;
+                        si.DC = Int32.Parse(spell.dc);
+                        si.Spell = Spell.ByName(ExtractSpellName(spell.name));
+                        si.Cast = (spell.castsleft != null && spell.castsleft != "0" ? Int32.Parse(spell.castsleft) : default(int?));
+                        si.AlreadyCast = (spell.castsleft != null && spell.castsleft == "0");
+                        break;
+                    case "7":
+                        si.Name = spell.name;
+                        si.DC = Int32.Parse(spell.dc);
+                        si.Spell = Spell.ByName(ExtractSpellName(spell.name));
+                        si.Cast = (spell.castsleft != null && spell.castsleft != "0" ? Int32.Parse(spell.castsleft) : default(int?));
+                        si.AlreadyCast = (spell.castsleft != null && spell.castsleft == "0");
+                        break;
+                    case "8":
+                        si.Name = spell.name;
+                        si.DC = Int32.Parse(spell.dc);
+                        si.Spell = Spell.ByName(ExtractSpellName(spell.name));
+                        si.Cast = (spell.castsleft != null && spell.castsleft != "0" ? Int32.Parse(spell.castsleft) : default(int?));
+                        si.AlreadyCast = (spell.castsleft != null && spell.castsleft == "0");
+                        break;
+                    case "9":
+                        si.Name = spell.name;
+                        si.DC = Int32.Parse(spell.dc);
+                        si.Spell = Spell.ByName(ExtractSpellName(spell.name));
+                        si.Cast = (spell.castsleft != null && spell.castsleft != "0" ? Int32.Parse(spell.castsleft) : default(int?));
+                        si.AlreadyCast = (spell.castsleft != null && spell.castsleft == "0");
+                        break;
+                }
+                li.Spells.Add(si);
+
+            }
+            return li;
+        }
+        private static StringBuilder getspellString(IEnumerable<Herolab.Spell> y, StringBuilder sb, Spellclass spellclass, bool perday)
+        {
+            string tracker = "";
+            foreach (var spell in y)
+            {
+                if (Int32.Parse(spell.level) > Int32.Parse(spellclass.maxspelllevel)) { break; }
+
+                if (tracker != spell.level)
+                {
+                    sb.Append(spell.level);
+                    if (perday)
+                    {
+                        switch (spell.level)
+                        {
+                            case "0":
+
+                                break;
+                            default:
+                                var list = spellclass.spelllevel.ToList();
+                                sb.Append(" (" + (from sl in list where sl.level == spell.level select sl.maxcasts).Single() + "/day)");
+                                break;
+                        }
+                        sb.Append("-");
+                    }
+                }
+                switch (spell.level)
+                {
+                    case "0":
+                        sb.Append(!spell.range.Equals("Personal", StringComparison.OrdinalIgnoreCase) && !spell.save.Equals("None", StringComparison.OrdinalIgnoreCase) ? spell.name + " (DC " + spell.dc + "), " : spell.name + ", ");
+                        break;
+                    case "1":
+                        sb.Append(!spell.range.Equals("Personal", StringComparison.OrdinalIgnoreCase) && !spell.save.Equals("None", StringComparison.OrdinalIgnoreCase) ? spell.name + " (DC " + spell.dc + "), " : spell.name + ", ");
+                        break;
+                    case "2":
+                        sb.Append(!spell.range.Equals("Personal", StringComparison.OrdinalIgnoreCase) && !spell.save.Equals("None", StringComparison.OrdinalIgnoreCase) ? spell.name + " (DC " + spell.dc + "), " : spell.name + ", ");
+                        break;
+                    case "3":
+                        sb.Append(!spell.range.Equals("Personal", StringComparison.OrdinalIgnoreCase) && !spell.save.Equals("None", StringComparison.OrdinalIgnoreCase) ? spell.name + " (DC " + spell.dc + "), " : spell.name + ", ");
+                        break;
+                    case "4":
+                        sb.Append(!spell.range.Equals("Personal", StringComparison.OrdinalIgnoreCase) && !spell.save.Equals("None", StringComparison.OrdinalIgnoreCase) ? spell.name + " (DC " + spell.dc + "), " : spell.name + ", ");
+                        break;
+                    case "5":
+                        sb.Append(!spell.range.Equals("Personal", StringComparison.OrdinalIgnoreCase) && !spell.save.Equals("None", StringComparison.OrdinalIgnoreCase) ? spell.name + " (DC " + spell.dc + "), " : spell.name + ", ");
+                        break;
+                    case "6":
+                        sb.Append(!spell.range.Equals("Personal", StringComparison.OrdinalIgnoreCase) && !spell.save.Equals("None", StringComparison.OrdinalIgnoreCase) ? spell.name + " (DC " + spell.dc + "), " : spell.name + ", ");
+                        break;
+                    case "7":
+                        sb.Append(!spell.range.Equals("Personal", StringComparison.OrdinalIgnoreCase) && !spell.save.Equals("None", StringComparison.OrdinalIgnoreCase) ? spell.name + " (DC " + spell.dc + "), " : spell.name + ", ");
+                        break;
+                    case "8":
+                        sb.Append(!spell.range.Equals("Personal", StringComparison.OrdinalIgnoreCase) && !spell.save.Equals("None", StringComparison.OrdinalIgnoreCase) ? spell.name + " (DC " + spell.dc + "), " : spell.name + ", ");
+                        break;
+                    case "9":
+                        sb.Append(!spell.range.Equals("Personal", StringComparison.OrdinalIgnoreCase) && !spell.save.Equals("None", StringComparison.OrdinalIgnoreCase) ? spell.name + " (DC " + spell.dc + "), " : spell.name + ", ");
+                        break;
+                }
+                tracker = spell.level;
+
+
+            }
+            return sb;
+        }
+        private static Tuple<string, string> Getskillinfo(string name)
+        {
+            char[] splt = { '(', ')' };
+            var x = name.Split(splt);
+            return (x.Count() > 1) ? new Tuple<string, string>(x[0], x[1]) : new Tuple<string, string>(x[0], null);
+        }
+        private static Tuple<string, string, string> GetSLAinfo(string name)
+        {
+            string SLAfrequency = "";
+            string SLAOther = "";
+
+            char[] splt = { '(', ')' };
+            var x = name.Split(splt, StringSplitOptions.RemoveEmptyEntries);
+            var SLAname = x[0].Trim();
+            x[0] = " ";
+            foreach (var split in x)
+            {
+                if (split.Equals("Constant") || split.Equals("At will") || split.Contains("/day"))
+                {
+                    SLAfrequency = split;
+                }
+                else if (!split.Equals(" ") && !split.Equals("Sp"))
+                {
+                    SLAOther = split;
+                }
+            }
+            return new Tuple<string, string, string>(SLAname, SLAOther, SLAfrequency);
+
+
+
+
+        }
+        private static string Stringfromlist(IEnumerable<string> List)
+        {
+            return List.Aggregate("", (current, ListItem) => current.AppendListItem(ListItem));
+        }
+        private static Tuple<int, int, int, string> Getdamageroll(string roll)
+        {
+            var rl = roll;
+            var plus = "";
+            var rx = 0;
+            if (roll.Contains(" plus"))
+            {
+                plus = roll.Substring(roll.IndexOf(" plus"));
+                rx = roll.IndexOf(" plus");
+                rl = roll.Substring(0, roll.IndexOf(" plus"));
+            }
+
+            char[] splt = { '+', '-' };
+            char[] splitdie = { 'd' };
+            var x = rl.Split(splt);
+            if (roll.Contains("-"))
+            {
+                x[1] = "-" + x[1];
+            }
+            var y = x[0].Split(splitdie);
+            if (x.Count() > 2)
+            {
+                var z = x.ToList();
+                z.RemoveRange(0, 2);
+                var first = true;
+                foreach (string s in z)
+                    if (first)
+                    {
+                        plus = plus + (" Plus " + s);
+                        first = false;
+                    }
+                    else
+                    {
+                        plus = plus + (" And " + s);
+                    }
+            }
+            return (x.Count() > 1) ? new Tuple<int, int, int, string>(Int32.Parse(y[0]), Int32.Parse(y[1]), Int32.Parse(x[1]), plus) : new Tuple<int, int, int, string>(Int32.Parse(y[0]), Int32.Parse(y[1]), 0, plus);
+        }
+        private static string ShortenSpecialType(string type)
+        {
+            return type.Substring(0, 2);
+        }
+        private static string RemoveSpecialTypefromName(string name, string remove)
+        {
+
+            return name.Remove(name.IndexOf(" (" + remove + ")"), 5);
+        }
+        private static Tuple<int?, int?, int?, int?> Getattackmods(string attacks)
+        {
+
+            char[] splt = { '/' };
+
+            var x = attacks.Split(splt);
+            switch (x.Count())
+            {
+                case 1:
+                    return new Tuple<int?, int?, int?, int?>(Int32.Parse(x[0]), null, null, null);
+                case 2:
+                    return new Tuple<int?, int?, int?, int?>(Int32.Parse(x[0]), Int32.Parse(x[1]), null, null);
+                case 3:
+                    return new Tuple<int?, int?, int?, int?>(Int32.Parse(x[0]), Int32.Parse(x[1]), Int32.Parse(x[2]),
+                        null);
+                case 4:
+                    return new Tuple<int?, int?, int?, int?>(Int32.Parse(x[0]), Int32.Parse(x[1]), Int32.Parse(x[2]),
+                        Int32.Parse(x[3]));
+
+            }
+            return new Tuple<int?, int?, int?, int?>(null, null, null, null);
+        }
+        private static string RemoveArchtypefromName(string Name)
+        {
+            var BaseClass = Name;
+            if (Name.Contains(" ("))
+            {
+                char[] splt = { '(' };
+                var splitup = Name.Split(splt);
+                BaseClass = splitup[0].Trim();
+            }
+
+            return BaseClass;
+        }
+        private static void PurifyWeapon(Herolab.Weapon weapon, string race)
+        {
+            weapon.name = Regex.Replace(weapon.name, " \\(" + race + "\\)", "");
+            weapon.name = Regex.Replace(weapon.name, " \\([a-z,A-Z]+\\)", "");
+            if (Regex.IsMatch(weapon.name, " x[0-9]+"))
+            {
+                var x = Regex.Match(weapon.name, " x[0-9]+");
+                var y = x.Captures;
+                foreach (var r in from object VARIABLE in y select VARIABLE.ToString())
+                {
+                    weapon.name = Regex.Replace(r, "x", "") + " " + weapon.name;
+                }
+            }
+            weapon.name = Regex.Replace(weapon.name, " x[0-9]+", "");
+            weapon.attack = Regex.Replace(weapon.attack, " x[0-9]+", "");
+            //return weapon;
+        }
+
+        private static void Removeadjectivesfromweaponname(Herolab.Weapon weapon)
+        {
+            if (weapon.itempower != null)
+            {
+                var Adjectives = weapon.itempower.Select(a => a.name);
+                foreach (var Adjective in Adjectives)
+                {
+                    weapon.name = Regex.Replace(weapon.name, Adjective + ",|" + Adjective, "", RegexOptions.IgnoreCase);
+                }
+            }
+
+
+        }
+
+        private static int? Removeenhancementbonusfromweaponname(Herolab.Weapon weapon)
+        {
+            var Enhancementbonus = Regex.Match(weapon.name, "(\\+|-)[0-9]+");
+            if (!Enhancementbonus.Success) return null;
+            Int32 bonus;
+            Int32.TryParse(Enhancementbonus.Value, out bonus);
+            weapon.name = Regex.Replace(weapon.name, "(\\+|-)[0-9]+", "");
+            return bonus;
+        }
+        private static bool Removequalityfromname(Herolab.Weapon meleeWeapon)
+        {
+            if (!meleeWeapon.name.Contains("Masterwork")) return false;
+            meleeWeapon.name = Regex.Replace(meleeWeapon.name, "Masterwork", "");
+            return true;
+        }
+        private static string Removematerialfromweaponname(Herolab.Weapon meleeWeapon)
+        {
+            var Material = Regex.Match(meleeWeapon.name, "(Adamantine|Alchemical Silver|Blood Crystal|Bone|Bronze|Cold Iron|Crystal, Deep|Crystal, Mundane|Darkwood|Elysian Bronze|Fire-Forged Steel|Frost-Forged Steel|Gold|Gold Plated|Greenwood|Ironwood|Living Steel|Mithral|Nexavaran Steel|Obsidian|Paueliel|Reinforced Viridium|Silversheen|Stone|Viridium)", RegexOptions.IgnoreCase);
+            meleeWeapon.name = Regex.Replace(meleeWeapon.name, "(Adamantine|Alchemical Silver|Blood Crystal|Bone|Bronze|Cold Iron|Crystal, Deep|Crystal, Mundane|Darkwood|Elysian Bronze|Fire-Forged Steel|Frost-Forged Steel|Gold|Gold Plated|Greenwood|Ironwood|Living Steel|Mithral|Nexavaran Steel|Obsidian|Paueliel|Reinforced Viridium|Silversheen|Stone|Viridium)", "", RegexOptions.IgnoreCase);
+            return Material.Value;
         }
 
         void UpdateFromDetailsDB()
@@ -9585,7 +10916,27 @@ namespace CombatManager
                 }
             }
 
-            [DataMember]
+        [DataMember]
+        public ObservableCollection<ActiveResource> TResources
+        {
+            get
+            {
+                return TrackedResources;
+            }
+            set
+            {
+                if (TrackedResources != value)
+                {
+                    TrackedResources = value;
+
+                    if (PropertyChanged != null) { PropertyChanged(this, new PropertyChangedEventArgs("TResources")); }
+
+                }
+            }
+        }
+
+
+        [DataMember]
             public String Description_Visual
             {
                 get
