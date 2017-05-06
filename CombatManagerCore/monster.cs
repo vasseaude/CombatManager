@@ -8132,6 +8132,7 @@ namespace CombatManager
 
         public static CreatureType ParseCreatureType(string name)
         {
+            if (name == null) return creatureTypes[creatureTypeNames[CreatureType.Humanoid]];
             if (!creatureTypes.ContainsKey(name.ToLower()))
             {
                 System.Diagnostics.Debug.WriteLine("Unknow creature type.  Type: " + name);

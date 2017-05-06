@@ -4346,25 +4346,11 @@ namespace CombatManager
         private List<Character> GetViewSelectedCharactersFromChar(Character source)
         {
             ListBox box;
-            if (source.IsMonster)
-            {
-                box = monsterListBox;
-            }
-            else
-            {
-                box = playerListBox;
-            }
+            box = source.IsMonster ? monsterListBox : playerListBox; 
 
-            List<Character> list = new List<Character>();
-
-
-            foreach (Character ch in box.SelectedItems)
-            {
-                list.Add(ch);
-            }
-
-
-            if (list.Count == 0)
+            List<Character> list = box.SelectedItems.Cast<Character>().ToList();
+           
+            if (list.Count == 0||!list.Contains(source))
             {
                 list.Add(source);
             }
@@ -5111,6 +5097,7 @@ namespace CombatManager
             }
         }
 
+
         private void playerListBox_GotFocus(object sender, RoutedEventArgs e)
         {
             ListBox box = (ListBox)sender;
@@ -5122,6 +5109,13 @@ namespace CombatManager
             }
         }
 
+        private void PlayerListBox_OnLostFocus(object sender, RoutedEventArgs e)
+        {
+            ListBox box = (ListBox)sender;
+            //box.UnselectAll();
+            
+        }
+
         private void monsterListBox_GotFocus(object sender, RoutedEventArgs e)
         {
             ListBox box = (ListBox)sender;
@@ -5131,6 +5125,13 @@ namespace CombatManager
             {
                 SetCurrentViewMonster(ch);
             }
+        }
+
+        private void monsterListBox_OnLostFocus(object sender, RoutedEventArgs e)
+        {
+            ListBox box = (ListBox)sender;
+            box.UnselectAll();
+
         }
 
         private void ClearDelayReadyMenuItem_Click(object sender, RoutedEventArgs e)
@@ -6966,10 +6967,9 @@ namespace CombatManager
                                         mi.SetNamedIcon("sword");
 
                                     }
-                                    AttackSetRollInfo ri = new AttackSetRollInfo();
-                                    ri.Characters = meleesets[s];
-                                    ri.Characters.Sort((a, b) => String.Compare(a.Name, b.Name, true));
-                                    ri.Attacks = set;
+                                    AttackSetRollInfo ri = new AttackSetRollInfo {Characters = meleesets[s]};
+                                        ri.Characters.Sort((a, b) => String.Compare(a.Name, b.Name, true));
+                                        ri.Attacks = set;
                                     mi.Tag = ri;
 
                                     mi.Click += new RoutedEventHandler(RollMeleeAttackItem_Click);
@@ -6980,23 +6980,11 @@ namespace CombatManager
                                 {
                                     MenuItem mi = new MenuItem();
                                     string s = attack.ToString();
-                                    mi.Header = attack.ToString();
-                                    if (rangedsets[s].Count > 1)
-                                    {
-
-                                        mi.SetNamedIcon("clone");
-                                    }
-                                    else
-                                    {
-
-                                        mi.SetNamedIcon("bow");
-
-                                    }
-
-                                    AttackRollInfo ri = new AttackRollInfo();
-                                    ri.Characters = rangedsets[s];
-                                    ri.Characters.Sort((a, b) => String.Compare(a.Name, b.Name, true));
-                                    ri.Attack = attack;
+                                        mi.Header = attack.ToString();
+                                        mi.SetNamedIcon(rangedsets[s].Count > 1 ? "clone" : "bow");
+                                    AttackRollInfo ri = new AttackRollInfo {Characters = rangedsets[s]};
+                                        ri.Characters.Sort((a, b) => String.Compare(a.Name, b.Name, true));
+                                        ri.Attack = attack;
                                     mi.Tag = ri;
                                     mi.Click += new RoutedEventHandler(RollRangedAttackItem_Click);
                                     attacksItem.Items.Add(mi);
@@ -8215,7 +8203,7 @@ namespace CombatManager
 
         private void OpenMapStub(GameMapList.MapStub stub)
         {
-
+            if (!File.Exists(stub.SourceFile)) return;
             if (stub.Map == null)
             {
                 gameMapList.LoadStub(stub);
@@ -8262,6 +8250,15 @@ namespace CombatManager
             System.Diagnostics.Process.Start("explorer.exe", string.Format("/select,\"{0}\"", filePath));
         }
 
+
+        private void CombatListBox_OnMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            Character character = (Character)combatView.CurrentItem;
+
+            combatView.MoveCurrentTo(character);
+            
+            SetCurrentViewMonster(character);
+        }
     }
 
 
